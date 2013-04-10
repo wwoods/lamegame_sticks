@@ -67,6 +67,7 @@ def load_stock(parser):
 @command
 def profit(parser):
     parser.add_argument('--ticker', type = unicode)
+    parser.add_argument('--as-of')
     args = parser.parse_args()
 
     tickers = []
@@ -76,7 +77,13 @@ def profit(parser):
         tickers.extend(t
                 for t in db.StockTransaction.collection.distinct('ticker'))
 
+    if args.as_of:
+        args.as_of = datetime.datetime.strptime(args.as_of, "%Y-%m-%d")
+    else:
+        args.as_of = datetime.datetime.utcnow()
+
     profit = 0.0
+    totalPrice = 0.0
     for ticker in tickers:
         sharesAndValues = []
         for st in db.StockTransaction.find({ 'ticker': ticker },
@@ -88,11 +95,15 @@ def profit(parser):
                 raise NotImplementedError()
         sharesCount = sum([ s[0] for s in sharesAndValues ])
         sharesPrice = sum([ s[0] * s[1] + s[2] for s in sharesAndValues ])
-        tProfit = db.StockDay.find_one({ 'ticker': ticker },
+        tProfit = db.StockDay.find_one(
+                { 'ticker': ticker, 'date': { '$lte': args.as_of } },
                 sort = [ ('date', -1) ])['close'] * sharesCount - sharesPrice
-        logging.info("{}: {}".format(ticker, tProfit))
+        logging.info("{}: {} ({:.2f}%)".format(ticker, tProfit, 
+                100.0 * tProfit / sharesPrice))
         profit += tProfit
-    logging.info("Total: {}".format(profit))
+        totalPrice += sharesPrice
+    logging.info("Total: {} ({:.2f}%)".format(profit, 
+            100.0 * profit / totalPrice))
 
 
 @command
